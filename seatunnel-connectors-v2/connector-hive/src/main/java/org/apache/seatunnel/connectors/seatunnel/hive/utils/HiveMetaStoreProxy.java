@@ -22,22 +22,27 @@ import org.apache.seatunnel.shade.com.typesafe.config.Config;
 import org.apache.seatunnel.common.config.TypesafeConfigUtils;
 import org.apache.seatunnel.connectors.seatunnel.file.config.BaseSourceConfigOptions;
 import org.apache.seatunnel.connectors.seatunnel.file.hadoop.HadoopLoginFactory;
+import org.apache.seatunnel.connectors.seatunnel.hive.commit.HadoopAuthConfigOption;
 import org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorErrorCode;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorException;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Table;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.thrift.TException;
 
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.MalformedURLException;
+import java.security.PrivilegedExceptionAction;
 import java.util.List;
 import java.util.Objects;
 
@@ -45,6 +50,37 @@ import java.util.Objects;
 public class HiveMetaStoreProxy {
     private HiveMetaStoreClient hiveMetaStoreClient;
     private static volatile HiveMetaStoreProxy INSTANCE = null;
+
+    /** Login with kerberos, and do the given action after login successfully. */
+    public static <T> T loginWithKerberos(
+            Configuration configuration,
+            String krb5FilePath,
+            String kerberosPrincipal,
+            String kerberosKeytabPath,
+            String loginConfig,
+            String zookeeperServerPrincipal,
+            HadoopLoginFactory.LoginFunction<T> action)
+            throws IOException, InterruptedException {
+        if (!configuration.get("hadoop.security.authentication").equals("kerberos")) {
+            throw new IllegalArgumentException("hadoop.security.authentication must be kerberos");
+        }
+        // Use global lock to avoid multiple threads to execute setConfiguration at the same time
+        synchronized (UserGroupInformation.class) {
+            if (StringUtils.isNotEmpty(krb5FilePath)) {
+                System.setProperty("java.security.krb5.conf", krb5FilePath);
+            }
+            System.setProperty("java.security.auth.login.config", loginConfig);
+            System.setProperty("zookeeper.server.principal", zookeeperServerPrincipal);
+            // init configuration
+            UserGroupInformation.setConfiguration(configuration);
+            UserGroupInformation userGroupInformation =
+                    UserGroupInformation.loginUserFromKeytabAndReturnUGI(
+                            kerberosPrincipal, kerberosKeytabPath);
+            return userGroupInformation.doAs(
+                    (PrivilegedExceptionAction<T>)
+                            () -> action.run(configuration, userGroupInformation));
+        }
+    }
 
     private HiveMetaStoreProxy(Config config) {
         String metastoreUri = config.getString(HiveConfig.METASTORE_URI.key());
@@ -58,7 +94,7 @@ public class HiveMetaStoreProxy {
             }
             if (HiveMetaStoreProxyUtils.enableKerberos(config)) {
                 this.hiveMetaStoreClient =
-                        HadoopLoginFactory.loginWithKerberos(
+                        loginWithKerberos(
                                 new Configuration(),
                                 TypesafeConfigUtils.getConfig(
                                         config,
@@ -67,6 +103,9 @@ public class HiveMetaStoreProxy {
                                 config.getString(BaseSourceConfigOptions.KERBEROS_PRINCIPAL.key()),
                                 config.getString(
                                         BaseSourceConfigOptions.KERBEROS_KEYTAB_PATH.key()),
+                                config.getString(HadoopAuthConfigOption.LOGIN_CONFIG.key()),
+                                config.getString(
+                                        HadoopAuthConfigOption.ZOOKEEPER_SERVER_PRINCIPAL.key()),
                                 (configuration, userGroupInformation) ->
                                         new HiveMetaStoreClient(hiveConf));
                 return;
