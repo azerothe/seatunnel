@@ -30,7 +30,7 @@
     <name>SeaTunnel : Connectors V2 : Hive</name>
 
     <properties>
-        <hive.exec.version>2.3.9</hive.exec.version>
+        <hive.exec.version>3.1.3</hive.exec.version>
         <connector.name>connector.hive</connector.name>
     </properties>
 
@@ -60,10 +60,14 @@
             </exclusions>
         </dependency>
         <dependency>
+            <groupId>com.eastcom</groupId>
+            <artifactId>huawei-hadoop</artifactId>
+            <version>3.1.1</version>
+        </dependency>
+        <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-exec</artifactId>
             <version>${hive.exec.version}</version>
-            <scope>provided</scope>
             <exclusions>
                 <exclusion>
                     <groupId>log4j</groupId>
