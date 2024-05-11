@@ -219,6 +219,8 @@ public class HadoopFileSystemProxy implements Serializable, Closeable {
                     hadoopConf.getKrb5Path(),
                     hadoopConf.getKerberosPrincipal(),
                     hadoopConf.getKerberosKeytabPath(),
+                    hadoopConf.getLoginConfig(),
+                    hadoopConf.getZookeeperServerPrincipal(),
                     loginFunction);
         }
         if (enableRemoteUser()) {
@@ -294,6 +296,8 @@ public class HadoopFileSystemProxy implements Serializable, Closeable {
                         hadoopConf.getKrb5Path(),
                         hadoopConf.getKerberosPrincipal(),
                         hadoopConf.getKerberosKeytabPath(),
+                        hadoopConf.getLoginConfig(),
+                        hadoopConf.getZookeeperServerPrincipal(),
                         (configuration, userGroupInformation) -> {
                             this.userGroupInformation = userGroupInformation;
                             this.fileSystem = FileSystem.get(configuration);

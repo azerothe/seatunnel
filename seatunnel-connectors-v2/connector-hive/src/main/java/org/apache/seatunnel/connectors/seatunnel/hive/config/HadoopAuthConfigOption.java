@@ -1,4 +1,4 @@
-package org.apache.seatunnel.connectors.seatunnel.hive.commit;
+package org.apache.seatunnel.connectors.seatunnel.hive.config;
 
 import org.apache.seatunnel.api.configuration.Option;
 import org.apache.seatunnel.api.configuration.Options;

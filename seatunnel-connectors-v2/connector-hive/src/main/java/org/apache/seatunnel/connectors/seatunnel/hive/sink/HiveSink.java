@@ -35,12 +35,12 @@ import org.apache.seatunnel.connectors.seatunnel.file.sink.commit.FileAggregated
 import org.apache.seatunnel.connectors.seatunnel.file.sink.commit.FileCommitInfo;
 import org.apache.seatunnel.connectors.seatunnel.hive.commit.HiveSinkAggregatedCommitter;
 import org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig;
+import org.apache.seatunnel.connectors.seatunnel.hive.config.HiveJdbcOption;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorErrorCode;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorException;
+import org.apache.seatunnel.connectors.seatunnel.hive.meta.HiveTable;
 
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.metastore.api.Table;
 
 import com.google.auto.service.AutoService;
 
@@ -62,7 +62,6 @@ import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSinkConf
 import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSinkConfig.PARTITION_DIR_EXPRESSION;
 import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSinkConfig.ROW_DELIMITER;
 import static org.apache.seatunnel.connectors.seatunnel.file.config.BaseSinkConfig.SINK_COLUMNS;
-import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.METASTORE_URI;
 import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.ORC_OUTPUT_FORMAT_CLASSNAME;
 import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.PARQUET_OUTPUT_FORMAT_CLASSNAME;
 import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.TABLE_NAME;
@@ -72,7 +71,7 @@ import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.T
 public class HiveSink extends BaseHdfsFileSink {
     private String dbName;
     private String tableName;
-    private Table tableInformation;
+    private HiveTable tableInformation;
 
     @Override
     public String getPluginName() {
@@ -82,7 +81,11 @@ public class HiveSink extends BaseHdfsFileSink {
     @Override
     public void prepare(Config pluginConfig) throws PrepareFailException {
         CheckResult result =
-                CheckConfigUtil.checkAllExists(pluginConfig, METASTORE_URI.key(), TABLE_NAME.key());
+                CheckConfigUtil.checkAllExists(
+                        pluginConfig,
+                        HiveJdbcOption.URL.key(),
+                        HiveJdbcOption.DRIVER.key(),
+                        TABLE_NAME.key());
         if (!result.isSuccess()) {
             throw new HiveConnectorException(
                     SeaTunnelAPIErrorCode.CONFIG_VALIDATION_FAILED,
@@ -119,48 +122,53 @@ public class HiveSink extends BaseHdfsFileSink {
                                     SINK_COLUMNS.key(),
                                     PARTITION_BY.key())));
         }
-        Pair<String[], Table> tableInfo = HiveConfig.getTableInfo(pluginConfig);
+        Pair<String[], HiveTable> tableInfo = HiveConfig.getTableInfo(pluginConfig);
         dbName = tableInfo.getLeft()[0];
         tableName = tableInfo.getLeft()[1];
         tableInformation = tableInfo.getRight();
         List<String> sinkFields =
-                tableInformation.getSd().getCols().stream()
-                        .map(FieldSchema::getName)
+                tableInformation.getSinkFields().stream()
+                        .map(HiveTable.HiveColumn::getName)
                         .collect(Collectors.toList());
         List<String> partitionKeys =
                 tableInformation.getPartitionKeys().stream()
-                        .map(FieldSchema::getName)
+                        .map(HiveTable.HiveColumn::getName)
                         .collect(Collectors.toList());
         sinkFields.addAll(partitionKeys);
-        String outputFormat = tableInformation.getSd().getOutputFormat();
-        if (TEXT_OUTPUT_FORMAT_CLASSNAME.equals(outputFormat)) {
-            Map<String, String> parameters =
-                    tableInformation.getSd().getSerdeInfo().getParameters();
-            pluginConfig =
-                    pluginConfig
-                            .withValue(
-                                    FILE_FORMAT_TYPE.key(),
-                                    ConfigValueFactory.fromAnyRef(FileFormat.TEXT.toString()))
-                            .withValue(
-                                    FIELD_DELIMITER.key(),
-                                    ConfigValueFactory.fromAnyRef(parameters.get("field.delim")))
-                            .withValue(
-                                    ROW_DELIMITER.key(),
-                                    ConfigValueFactory.fromAnyRef(parameters.get("line.delim")));
-        } else if (PARQUET_OUTPUT_FORMAT_CLASSNAME.equals(outputFormat)) {
-            pluginConfig =
-                    pluginConfig.withValue(
-                            FILE_FORMAT_TYPE.key(),
-                            ConfigValueFactory.fromAnyRef(FileFormat.PARQUET.toString()));
-        } else if (ORC_OUTPUT_FORMAT_CLASSNAME.equals(outputFormat)) {
-            pluginConfig =
-                    pluginConfig.withValue(
-                            FILE_FORMAT_TYPE.key(),
-                            ConfigValueFactory.fromAnyRef(FileFormat.ORC.toString()));
-        } else {
-            throw new HiveConnectorException(
-                    CommonErrorCodeDeprecated.ILLEGAL_ARGUMENT,
-                    "Hive connector only support [text parquet orc] table now");
+        String outputFormat = tableInformation.getOutputFormat();
+        switch (outputFormat) {
+            case TEXT_OUTPUT_FORMAT_CLASSNAME:
+                Map<String, String> parameters = tableInformation.getStorageDescParams();
+                pluginConfig =
+                        pluginConfig
+                                .withValue(
+                                        FILE_FORMAT_TYPE.key(),
+                                        ConfigValueFactory.fromAnyRef(FileFormat.TEXT.toString()))
+                                .withValue(
+                                        FIELD_DELIMITER.key(),
+                                        ConfigValueFactory.fromAnyRef(
+                                                parameters.get("field.delim")))
+                                .withValue(
+                                        ROW_DELIMITER.key(),
+                                        ConfigValueFactory.fromAnyRef(
+                                                parameters.get("line.delim")));
+                break;
+            case PARQUET_OUTPUT_FORMAT_CLASSNAME:
+                pluginConfig =
+                        pluginConfig.withValue(
+                                FILE_FORMAT_TYPE.key(),
+                                ConfigValueFactory.fromAnyRef(FileFormat.PARQUET.toString()));
+                break;
+            case ORC_OUTPUT_FORMAT_CLASSNAME:
+                pluginConfig =
+                        pluginConfig.withValue(
+                                FILE_FORMAT_TYPE.key(),
+                                ConfigValueFactory.fromAnyRef(FileFormat.ORC.toString()));
+                break;
+            default:
+                throw new HiveConnectorException(
+                        CommonErrorCodeDeprecated.ILLEGAL_ARGUMENT,
+                        "Hive connector only support [text parquet orc] table now");
         }
         pluginConfig =
                 pluginConfig
@@ -172,12 +180,11 @@ public class HiveSink extends BaseHdfsFileSink {
                                 ConfigValueFactory.fromAnyRef("${transactionId}"))
                         .withValue(
                                 FILE_PATH.key(),
-                                ConfigValueFactory.fromAnyRef(
-                                        tableInformation.getSd().getLocation()))
+                                ConfigValueFactory.fromAnyRef(tableInformation.getLocation()))
                         .withValue(SINK_COLUMNS.key(), ConfigValueFactory.fromAnyRef(sinkFields))
                         .withValue(
                                 PARTITION_BY.key(), ConfigValueFactory.fromAnyRef(partitionKeys));
-        String hdfsLocation = tableInformation.getSd().getLocation();
+        String hdfsLocation = tableInformation.getLocation();
         try {
             URI uri = new URI(hdfsLocation);
             String path = uri.getPath();

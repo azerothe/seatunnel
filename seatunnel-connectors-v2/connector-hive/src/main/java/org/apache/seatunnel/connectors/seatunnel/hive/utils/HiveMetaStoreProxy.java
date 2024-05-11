@@ -22,65 +22,33 @@ import org.apache.seatunnel.shade.com.typesafe.config.Config;
 import org.apache.seatunnel.common.config.TypesafeConfigUtils;
 import org.apache.seatunnel.connectors.seatunnel.file.config.BaseSourceConfigOptions;
 import org.apache.seatunnel.connectors.seatunnel.file.hadoop.HadoopLoginFactory;
-import org.apache.seatunnel.connectors.seatunnel.hive.commit.HadoopAuthConfigOption;
+import org.apache.seatunnel.connectors.seatunnel.hive.config.HadoopAuthConfigOption;
 import org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorErrorCode;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorException;
+import org.apache.seatunnel.connectors.seatunnel.hive.meta.HiveTable;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 import org.apache.hadoop.hive.metastore.api.Table;
-import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.thrift.TException;
 
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
-import java.io.IOException;
 import java.net.MalformedURLException;
-import java.security.PrivilegedExceptionAction;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Slf4j
-public class HiveMetaStoreProxy {
-    private HiveMetaStoreClient hiveMetaStoreClient;
+public class HiveMetaStoreProxy implements HiveMetaProxy {
+    private final HiveMetaStoreClient hiveMetaStoreClient;
     private static volatile HiveMetaStoreProxy INSTANCE = null;
-
-    /** Login with kerberos, and do the given action after login successfully. */
-    public static <T> T loginWithKerberos(
-            Configuration configuration,
-            String krb5FilePath,
-            String kerberosPrincipal,
-            String kerberosKeytabPath,
-            String loginConfig,
-            String zookeeperServerPrincipal,
-            HadoopLoginFactory.LoginFunction<T> action)
-            throws IOException, InterruptedException {
-        if (!configuration.get("hadoop.security.authentication").equals("kerberos")) {
-            throw new IllegalArgumentException("hadoop.security.authentication must be kerberos");
-        }
-        // Use global lock to avoid multiple threads to execute setConfiguration at the same time
-        synchronized (UserGroupInformation.class) {
-            if (StringUtils.isNotEmpty(krb5FilePath)) {
-                System.setProperty("java.security.krb5.conf", krb5FilePath);
-            }
-            System.setProperty("java.security.auth.login.config", loginConfig);
-            System.setProperty("zookeeper.server.principal", zookeeperServerPrincipal);
-            // init configuration
-            UserGroupInformation.setConfiguration(configuration);
-            UserGroupInformation userGroupInformation =
-                    UserGroupInformation.loginUserFromKeytabAndReturnUGI(
-                            kerberosPrincipal, kerberosKeytabPath);
-            return userGroupInformation.doAs(
-                    (PrivilegedExceptionAction<T>)
-                            () -> action.run(configuration, userGroupInformation));
-        }
-    }
 
     private HiveMetaStoreProxy(Config config) {
         String metastoreUri = config.getString(HiveConfig.METASTORE_URI.key());
@@ -93,9 +61,11 @@ public class HiveMetaStoreProxy {
                 hiveConf.addResource(new File(hiveSitePath).toURI().toURL());
             }
             if (HiveMetaStoreProxyUtils.enableKerberos(config)) {
+                Configuration kerberosConfiguration = new Configuration();
+                kerberosConfiguration.set("hadoop.security.authentication", "Kerberos");
                 this.hiveMetaStoreClient =
-                        loginWithKerberos(
-                                new Configuration(),
+                        HadoopLoginFactory.loginWithKerberos(
+                                kerberosConfiguration,
                                 TypesafeConfigUtils.getConfig(
                                         config,
                                         BaseSourceConfigOptions.KRB5_PATH.key(),
@@ -155,9 +125,24 @@ public class HiveMetaStoreProxy {
         return INSTANCE;
     }
 
-    public Table getTable(@NonNull String dbName, @NonNull String tableName) {
+    @Override
+    public HiveTable getTable(@NonNull String dbName, @NonNull String tableName) {
         try {
-            return hiveMetaStoreClient.getTable(dbName, tableName);
+            Table table = hiveMetaStoreClient.getTable(dbName, tableName);
+            List<HiveTable.HiveColumn> sinkFields =
+                    table.getSd().getCols().stream()
+                            .map(i -> new HiveTable.HiveColumn(i.getName(), i.getType()))
+                            .collect(Collectors.toList());
+            List<HiveTable.HiveColumn> partitionKeys =
+                    table.getPartitionKeys().stream()
+                            .map(i -> new HiveTable.HiveColumn(i.getName(), i.getType()))
+                            .collect(Collectors.toList());
+            String inputFormat = table.getSd().getInputFormat();
+            String outputFormat = table.getSd().getOutputFormat();
+            Map<String, String> parameters = table.getSd().getSerdeInfo().getParameters();
+            String location = table.getSd().getLocation();
+            return new HiveTable(
+                    sinkFields, partitionKeys, inputFormat, outputFormat, parameters, location);
         } catch (TException e) {
             String errorMsg =
                     String.format("Get table [%s.%s] information failed", dbName, tableName);
@@ -166,6 +151,7 @@ public class HiveMetaStoreProxy {
         }
     }
 
+    @Override
     public void addPartitions(
             @NonNull String dbName, @NonNull String tableName, List<String> partitions)
             throws TException {
@@ -174,6 +160,7 @@ public class HiveMetaStoreProxy {
         }
     }
 
+    @Override
     public void dropPartitions(
             @NonNull String dbName, @NonNull String tableName, List<String> partitions)
             throws TException {
@@ -182,6 +169,7 @@ public class HiveMetaStoreProxy {
         }
     }
 
+    @Override
     public synchronized void close() {
         if (Objects.nonNull(hiveMetaStoreClient)) {
             hiveMetaStoreClient.close();

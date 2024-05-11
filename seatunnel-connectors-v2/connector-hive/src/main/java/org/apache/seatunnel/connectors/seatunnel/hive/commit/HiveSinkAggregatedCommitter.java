@@ -22,7 +22,8 @@ import org.apache.seatunnel.shade.com.typesafe.config.Config;
 import org.apache.seatunnel.connectors.seatunnel.file.config.HadoopConf;
 import org.apache.seatunnel.connectors.seatunnel.file.sink.commit.FileAggregatedCommitInfo;
 import org.apache.seatunnel.connectors.seatunnel.file.sink.commit.FileSinkAggregatedCommitter;
-import org.apache.seatunnel.connectors.seatunnel.hive.utils.HiveMetaStoreProxy;
+import org.apache.seatunnel.connectors.seatunnel.hive.utils.HiveMetaJdbcProxy;
+import org.apache.seatunnel.connectors.seatunnel.hive.utils.HiveMetaProxy;
 
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException;
 import org.apache.thrift.TException;
@@ -58,7 +59,7 @@ public class HiveSinkAggregatedCommitter extends FileSinkAggregatedCommitter {
     @Override
     public List<FileAggregatedCommitInfo> commit(
             List<FileAggregatedCommitInfo> aggregatedCommitInfos) throws IOException {
-        HiveMetaStoreProxy hiveMetaStore = HiveMetaStoreProxy.getInstance(pluginConfig);
+        HiveMetaProxy hiveMetaStore = HiveMetaJdbcProxy.getInstance(pluginConfig);
         List<FileAggregatedCommitInfo> errorCommitInfos = super.commit(aggregatedCommitInfos);
         if (errorCommitInfos.isEmpty()) {
             for (FileAggregatedCommitInfo aggregatedCommitInfo : aggregatedCommitInfos) {
@@ -73,7 +74,7 @@ public class HiveSinkAggregatedCommitter extends FileSinkAggregatedCommitter {
                     log.info("Add these partitions {}", partitions);
                 } catch (AlreadyExistsException e) {
                     log.warn("These partitions {} are already exists", partitions);
-                } catch (TException e) {
+                } catch (Exception e) {
                     log.error("Failed to add these partitions {}", partitions, e);
                     errorCommitInfos.add(aggregatedCommitInfo);
                 }
@@ -87,7 +88,7 @@ public class HiveSinkAggregatedCommitter extends FileSinkAggregatedCommitter {
     public void abort(List<FileAggregatedCommitInfo> aggregatedCommitInfos) throws Exception {
         super.abort(aggregatedCommitInfos);
         if (abortDropPartitionMetadata) {
-            HiveMetaStoreProxy hiveMetaStore = HiveMetaStoreProxy.getInstance(pluginConfig);
+            HiveMetaProxy hiveMetaStore = HiveMetaJdbcProxy.getInstance(pluginConfig);
             for (FileAggregatedCommitInfo aggregatedCommitInfo : aggregatedCommitInfos) {
                 Map<String, List<String>> partitionDirAndValuesMap =
                         aggregatedCommitInfo.getPartitionDirAndValuesMap();

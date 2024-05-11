@@ -37,7 +37,6 @@ public class HiveSourceFactory implements TableSourceFactory {
     public OptionRule optionRule() {
         return OptionRule.builder()
                 .required(HiveConfig.TABLE_NAME)
-                .required(HiveConfig.METASTORE_URI)
                 .optional(BaseSourceConfigOptions.READ_PARTITIONS)
                 .optional(BaseSourceConfigOptions.READ_COLUMNS)
                 .build();

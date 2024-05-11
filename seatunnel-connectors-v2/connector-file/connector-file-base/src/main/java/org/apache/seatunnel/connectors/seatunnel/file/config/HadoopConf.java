@@ -36,6 +36,8 @@ public class HadoopConf implements Serializable {
 
     protected String remoteUser;
 
+    private String loginConfig;
+    private String zookeeperServerPrincipal;
     private String krb5Path;
     protected String kerberosPrincipal;
     protected String kerberosKeytabPath;

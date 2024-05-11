@@ -21,6 +21,7 @@ import org.apache.seatunnel.api.configuration.util.OptionRule;
 import org.apache.seatunnel.api.table.factory.Factory;
 import org.apache.seatunnel.api.table.factory.TableSinkFactory;
 import org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig;
+import org.apache.seatunnel.connectors.seatunnel.hive.config.HiveJdbcOption;
 
 import com.google.auto.service.AutoService;
 
@@ -37,7 +38,8 @@ public class HiveSinkFactory implements TableSinkFactory {
     public OptionRule optionRule() {
         return OptionRule.builder()
                 .required(HiveConfig.TABLE_NAME)
-                .required(HiveConfig.METASTORE_URI)
+                .required(HiveJdbcOption.URL)
+                .required(HiveJdbcOption.DRIVER)
                 .optional(ABORT_DROP_PARTITION_METADATA)
                 .build();
     }

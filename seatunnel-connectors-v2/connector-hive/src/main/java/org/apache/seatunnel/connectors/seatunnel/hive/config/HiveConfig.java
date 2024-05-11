@@ -21,10 +21,11 @@ import org.apache.seatunnel.shade.com.typesafe.config.Config;
 
 import org.apache.seatunnel.api.configuration.Option;
 import org.apache.seatunnel.api.configuration.Options;
-import org.apache.seatunnel.connectors.seatunnel.hive.utils.HiveMetaStoreProxy;
+import org.apache.seatunnel.connectors.seatunnel.hive.meta.HiveTable;
+import org.apache.seatunnel.connectors.seatunnel.hive.utils.HiveMetaJdbcProxy;
+import org.apache.seatunnel.connectors.seatunnel.hive.utils.HiveMetaProxy;
 
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.hadoop.hive.metastore.api.Table;
 
 public class HiveConfig {
     public static final Option<String> TABLE_NAME =
@@ -64,14 +65,14 @@ public class HiveConfig {
     public static final String ORC_OUTPUT_FORMAT_CLASSNAME =
             "org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat";
 
-    public static Pair<String[], Table> getTableInfo(Config config) {
+    public static Pair<String[], HiveTable> getTableInfo(Config config) {
         String table = config.getString(TABLE_NAME.key());
         String[] splits = table.split("\\.");
         if (splits.length != 2) {
             throw new RuntimeException("Please config " + TABLE_NAME + " as db.table format");
         }
-        HiveMetaStoreProxy hiveMetaStoreProxy = HiveMetaStoreProxy.getInstance(config);
-        Table tableInformation = hiveMetaStoreProxy.getTable(splits[0], splits[1]);
+        HiveMetaProxy hiveMetaStoreProxy = HiveMetaJdbcProxy.getInstance(config);
+        HiveTable tableInformation = hiveMetaStoreProxy.getTable(splits[0], splits[1]);
         hiveMetaStoreProxy.close();
         return Pair.of(splits, tableInformation);
     }

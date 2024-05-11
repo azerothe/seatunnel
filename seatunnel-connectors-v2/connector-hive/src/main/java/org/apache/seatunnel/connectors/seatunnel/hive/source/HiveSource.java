@@ -40,10 +40,9 @@ import org.apache.seatunnel.connectors.seatunnel.file.hdfs.source.BaseHdfsFileSo
 import org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorErrorCode;
 import org.apache.seatunnel.connectors.seatunnel.hive.exception.HiveConnectorException;
+import org.apache.seatunnel.connectors.seatunnel.hive.meta.HiveTable;
 
 import org.apache.commons.lang3.tuple.Pair;
-import org.apache.hadoop.hive.metastore.api.FieldSchema;
-import org.apache.hadoop.hive.metastore.api.Table;
 
 import com.google.auto.service.AutoService;
 
@@ -62,7 +61,7 @@ import static org.apache.seatunnel.connectors.seatunnel.hive.config.HiveConfig.T
 
 @AutoService(SeaTunnelSource.class)
 public class HiveSource extends BaseHdfsFileSource {
-    private Table tableInformation;
+    private HiveTable tableInformation;
 
     @Override
     public String getPluginName() {
@@ -72,8 +71,7 @@ public class HiveSource extends BaseHdfsFileSource {
     @Override
     public void prepare(Config pluginConfig) throws PrepareFailException {
         CheckResult result =
-                CheckConfigUtil.checkAllExists(
-                        pluginConfig, HiveConfig.METASTORE_URI.key(), HiveConfig.TABLE_NAME.key());
+                CheckConfigUtil.checkAllExists(pluginConfig, HiveConfig.TABLE_NAME.key());
         if (!result.isSuccess()) {
             throw new HiveConnectorException(
                     SeaTunnelAPIErrorCode.CONFIG_VALIDATION_FAILED,
@@ -121,9 +119,9 @@ public class HiveSource extends BaseHdfsFileSource {
                         "Every partition that in partition list should has the same directory depth");
             }
         }
-        Pair<String[], Table> tableInfo = HiveConfig.getTableInfo(pluginConfig);
+        Pair<String[], HiveTable> tableInfo = HiveConfig.getTableInfo(pluginConfig);
         tableInformation = tableInfo.getRight();
-        String inputFormat = tableInformation.getSd().getInputFormat();
+        String inputFormat = tableInformation.getInputFormat();
         if (TEXT_INPUT_FORMAT_CLASSNAME.equals(inputFormat)) {
             pluginConfig =
                     pluginConfig.withValue(
@@ -153,7 +151,7 @@ public class HiveSource extends BaseHdfsFileSource {
                     CommonErrorCodeDeprecated.ILLEGAL_ARGUMENT,
                     "Hive connector only support [text parquet orc] table now");
         }
-        String hdfsLocation = tableInformation.getSd().getLocation();
+        String hdfsLocation = tableInformation.getLocation();
         try {
             URI uri = new URI(hdfsLocation);
             String path = uri.getPath();
@@ -177,13 +175,12 @@ public class HiveSource extends BaseHdfsFileSource {
         super.prepare(pluginConfig);
     }
 
-    private Map<String, Object> parseSchema(Table table) {
+    private Map<String, Object> parseSchema(HiveTable table) {
         LinkedHashMap<String, Object> fields = new LinkedHashMap<>();
         LinkedHashMap<String, Object> schema = new LinkedHashMap<>();
-        List<FieldSchema> cols = table.getSd().getCols();
-        for (FieldSchema col : cols) {
-            String name = col.getName();
-            String type = col.getType();
+        for (HiveTable.HiveColumn sinkField : table.getSinkFields()) {
+            String name = sinkField.getName();
+            String type = sinkField.getType();
             fields.put(name, covertHiveTypeToSeaTunnelType(name, type));
         }
         schema.put("fields", fields);

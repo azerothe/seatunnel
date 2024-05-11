@@ -53,6 +53,15 @@ public abstract class BaseHdfsFileSink extends BaseFileSink {
             hadoopConf.setRemoteUser(pluginConfig.getString(BaseSinkConfig.REMOTE_USER.key()));
         }
 
+        if (pluginConfig.hasPath(BaseSinkConfig.LOGIN_CONFIG.key())) {
+            hadoopConf.setLoginConfig(pluginConfig.getString(BaseSinkConfig.LOGIN_CONFIG.key()));
+        }
+
+        if (pluginConfig.hasPath(BaseSinkConfig.ZOOKEEPER_SERVER_PRINCIPAL.key())) {
+            hadoopConf.setZookeeperServerPrincipal(
+                    pluginConfig.getString(BaseSinkConfig.ZOOKEEPER_SERVER_PRINCIPAL.key()));
+        }
+
         if (pluginConfig.hasPath(BaseSinkConfig.KRB5_PATH.key())) {
             hadoopConf.setKrb5Path(pluginConfig.getString(BaseSinkConfig.KRB5_PATH.key()));
         }

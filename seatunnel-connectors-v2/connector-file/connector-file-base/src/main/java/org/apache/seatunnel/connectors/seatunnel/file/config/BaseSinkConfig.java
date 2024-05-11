@@ -215,6 +215,15 @@ public class BaseSinkConfig {
                     .noDefaultValue()
                     .withDescription("The remote user name of hdfs");
 
+    public static final Option<String> LOGIN_CONFIG =
+            Options.key("login_config").stringType().noDefaultValue().withDescription("浙江Hive用");
+
+    public static final Option<String> ZOOKEEPER_SERVER_PRINCIPAL =
+            Options.key("zookeeper_server_principal")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription("浙江Hive用");
+
     public static final Option<String> KRB5_PATH =
             Options.key("krb5_path")
                     .stringType()
