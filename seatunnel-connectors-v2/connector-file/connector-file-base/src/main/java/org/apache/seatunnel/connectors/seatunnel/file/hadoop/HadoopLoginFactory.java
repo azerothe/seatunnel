@@ -34,7 +34,7 @@ public class HadoopLoginFactory {
             String kerberosKeytabPath,
             LoginFunction<T> action)
             throws IOException, InterruptedException {
-        if (!configuration.get("hadoop.security.authentication").equals("kerberos")) {
+        if (!configuration.get("hadoop.security.authentication").equalsIgnoreCase("kerberos")) {
             throw new IllegalArgumentException("hadoop.security.authentication must be kerberos");
         }
         // Use global lock to avoid multiple threads to execute setConfiguration at the same time
